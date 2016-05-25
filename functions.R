@@ -4,7 +4,7 @@ get_clim <- function(x, yr, mo){
   purrr::map(x, ~Reduce("+", .x)[,3]/30)
 }
 
-get_ma <- function(x, type, size=10, output="list", n.cores=32){
+get_ma <- function(x, type, season=NULL, size=10, output="list", n.cores=32){
   if(!(type %in% c("monthly", "annual", "seasonal"))) stop("invalid type.")
   if(type=="monthly"){
     x <- mclapply(x,
@@ -19,18 +19,21 @@ get_ma <- function(x, type, size=10, output="list", n.cores=32){
                   size=size, mc.cores=n.cores)
   }
   if(type=="seasonal"){
+    if(is.null(season) || !(season %in% c("winter", "spring", "summer", "autumn")))
+      stop("If res='seasonal', season must be 'winter', 'spring', 'summer' or 'autumn'.")
+    idx <- switch(season, winter=c(12,1,2), spring=3:5, summer=6:8, autumn=9:11)
+    yr.lim <- range(x[[1]]$Year)
     x <- mclapply(x,
                   function(x, size){
-                    mutate(x, Year=ifelse(Month==12, Year+1, Year),
-                           Month=ifelse(Month %in% c(1,2,12), 1, ifelse(Month %in% 3:5, 2, ifelse(Month %in% 6:8, 3, 4)))) %>%
-                      filter(Year > 1850 & Year <= 2100) %>%
+                    mutate(x, Year=ifelse(Month==12, Year+1, Year), Month=ifelse(Month %in% idx, 1, 0)) %>%
+                      filter(Year > yr.lim[1] & Year <= yr.lim[2] & Month==1) %>%
                       group_by(long, lat, Month, Year) %>% summarise(z=mean(z)) %>%
-                      mutate(z=roll_mean(z, size, fill=NA), idx=NULL) %>% filter(!is.na(z))
+                      mutate(z=roll_mean(z, size, fill=NA), Month=NULL, idx=NULL) %>% filter(!is.na(z))
                   }, size=size, mc.cores=n.cores)
   }
   #arr <- if(type=="annual") list("Year", "long", "lat") else list("Year", "Month", "long", "lat")
   x <- bind_rows(x) %>% group_by # %>% arrange_(.dots=arr)
-  x <- if(type=="annual") x %>% split(.$Year) else x %>% split(paste(.$Year, .$Month))
+  x <- if(type %in% c("seasonal", "annual")) x %>% split(.$Year) else x %>% split(paste(.$Year, .$Month+9))
   x
 }
 
@@ -41,9 +44,9 @@ project_to_hemisphere <- function(lat, long, lat0, long0){
   data.table(long=hold[,2], lat=hold[,1], inview=inview)
 }
 
-pad_frames <- function(x, n.period=360, rotation="add"){
+pad_frames <- function(x, n.period=360, rotation="add", force=TRUE){
   n <- length(x)
-  if(n >= n.period) return(x)
+  if(n >= n.period & !force) return(x)
   if(rotation=="add") x2 <- purrr::map(1:(n.period-1), ~x[[n]] %>% mutate(frameID=.x + n))
   if(rotation=="pad") x2 <- purrr::map(1:(n.period-n), ~x[[n]] %>% mutate(frameID=.x + n))
   c(x, x2)
@@ -102,7 +105,18 @@ save_maps <- function(x, lon=0, lat=0, n.period=360, n.frames=n.period, col=NULL
   g <- g + theme_blank() + coord_map("ortho", orientation=c(lonlat$lat[i], lonlat$lon[i], 23.4))
   if(is.character(suffix)) type <- paste(type, suffix, sep="_")
   dir.create(outDir <- file.path("frames", type), recursive=TRUE, showWarnings=FALSE)
-  png(sprintf(paste0(outDir, "/", type, "_%03d.png"), i),
+  png(sprintf(paste0(outDir, "/", type, "_%04d.png"), i),
+      width=4*1920, height=4*1080, res=300, bg="transparent")
+  print(g)
+  dev.off()
+  NULL
+}
+
+save_ts <- function(i, x, label, col, xlm, ylm){
+  x <- filter(x, frameID <= i)
+  g <- ggplot(x, aes(Year, Mean)) + geom_line(colour=col, size=1) + xlim(xlm) + ylim(ylm) + theme_blank()
+  dir.create(outDir <- file.path("frames", label), recursive=TRUE, showWarnings=FALSE)
+  png(sprintf(paste0(outDir, "/", label, "_%04d.png"), i),
       width=4*1920, height=4*1080, res=300, bg="transparent")
   print(g)
   dev.off()
