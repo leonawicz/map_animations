@@ -36,16 +36,19 @@ d.list <- purrr::map2(d.list, yr, ~mutate(.x, Year=as.numeric(.y)))
 d.list <- purrr::map2(d.list, mo, ~mutate(.x, Month=as.numeric(.y)))
 
 # @knitr moving_average
-res <- "monthly_original" # use "monthly_original" as default, otherwise "annual", "seasonal", "monthly"
+res <- "seasonal" # use "monthly_original" as default, otherwise annual, seasonal, monthly
+season <- "winter" # winter, spring, summer, autumn. Ignored if res != seasonal
+season.idx <- switch(season, winter=c(12,1,2), spring=3:5, summer=6:8, autumn=9:11)
 if(res %in% c("annual", "seasonal", "monthly")){
   idx <- sort(rep(1:32, length=nrow(d.list[[1]])))
   d.list <- purrr::map(d.list, ~mutate(.x, idx=idx)) %>% bind_rows
+  if(res=="seasonal") d.list <- filter(d.list, Month %in% season.idx)
   d.list <- d.list %>% split(.$idx)
   gc()
-  system.time( d.list <- get_ma(d.list, res) )
+  system.time( d.list <- get_ma(d.list, res, season) )
 }
 gc()
 
 d.list <- purrr::map2(d.list, seq_along(d.list), ~mutate(.x, frameID=.y))
-outfile <- paste0("data_", ifelse(res=="monthly_original", res, paste0(res, "_MA")), ".rds")
+outfile <- paste0("data_", switch(res, monthly_original="monthly_original", monthly="monthly_MA", annual="annual_MA", seasonal=paste0(season, "_MA")), ".rds")
 saveRDS(d.list, file=outfile)
