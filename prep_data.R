@@ -26,22 +26,26 @@ files <- files[ord]
 d.list <-mclapply(seq_along(files),
   function(i, files){
     print(length(files)-i)
-    raster(files[i]) %>% rotate %>% aggregate(2) %>% rasterToPoints %>% data.table %>% setnames(c("long", "lat", "z"))
-  }, files=files, mc.cores=32)
+    raster(files[i]) %>% aggregate(2) %>% rotate %>% rasterToPoints %>% data.table %>% mutate(Year=yr[i], Month=mo[i]) %>% setnames(c("long", "lat", "z", "Year", "Month"))
+  }, files=files, mc.cores=32) %>% bind_rows
 
 # @knitr climate_deltas
-clim <- get_clim(d.list, yr, mo)
-d.list <- purrr::map2(d.list, mo, ~mutate(.x, z=z - clim[[match(.y, unique(mo))]]))
-d.list <- purrr::map2(d.list, yr, ~mutate(.x, Year=as.numeric(.y)))
-d.list <- purrr::map2(d.list, mo, ~mutate(.x, Month=as.numeric(.y)))
+clim <- filter(d.list, Year > 1960 & Year <= 1990) %>% group_by(long, lat, Month) %>% summarise(z=mean(z))
+d.list <- left_join(d.list, clim, c("long", "lat", "Month")) %>% mutate(z=z.x-z.y) %>% select(-z.x, -z.y) %>% arrange(Year, Month, long, lat)
+#clim <- get_clim(d.list)
+#d.list <- purrr::map2(d.list, mo, ~mutate(.x, z=z - clim[[match(.y, unique(mo))]]))
+#d.list <- purrr::map2(d.list, yr, ~mutate(.x, Year=as.numeric(.y)))
+#d.list <- purrr::map2(d.list, mo, ~mutate(.x, Month=as.numeric(.y)))
 
 # @knitr moving_average
 res <- "seasonal" # use "monthly_original" as default, otherwise annual, seasonal, monthly
 season <- "winter" # winter, spring, summer, autumn. Ignored if res != seasonal
 season.idx <- switch(season, winter=c(12,1,2), spring=3:5, summer=6:8, autumn=9:11)
 if(res %in% c("annual", "seasonal", "monthly")){
-  idx <- sort(rep(1:32, length=nrow(d.list[[1]])))
-  d.list <- purrr::map(d.list, ~mutate(.x, idx=idx)) %>% bind_rows
+  idx <- rep(sort(rep(1:32, length=nrow(d.list)/length(files))), length(files))
+  d.list <- mutate(d.list, idx=idx)
+  #idx <- sort(rep(1:32, length=nrow(d.list[[1]])))
+  #d.list <- purrr::map(d.list, ~mutate(.x, idx=idx)) %>% bind_rows
   if(res=="seasonal") d.list <- filter(d.list, Month %in% season.idx)
   d.list <- d.list %>% split(.$idx)
   gc()

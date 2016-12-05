@@ -81,6 +81,15 @@ theme_blank <- function(){
     plot.background=element_rect(colour="transparent", fill="transparent"))
 }
 
+theme_axes_only <- function(col){
+  eb <- element_blank()
+  el <- element_line(colour=col)
+  theme(axis.line=el, axis.line.x=el, axis.line.y=el, axis.ticks=el,
+        axis.text=element_text(colour=col, size=18), legend.position="none",
+        panel.background=eb, panel.border=eb, panel.grid.major=eb, panel.grid.minor=eb,
+        plot.background=element_rect(colour="transparent", fill="transparent"))
+}
+
 save_maps <- function(x, lon=0, lat=0, n.period=360, n.frames=n.period, col=NULL, type="network", suffix=NULL, z.range=NULL){
   if(is.null(col)) col <- switch(type,
     network=c("#FFFFFF25", "#1E90FF25", "#FFFFFF", "#1E90FF50"),
@@ -112,9 +121,20 @@ save_maps <- function(x, lon=0, lat=0, n.period=360, n.frames=n.period, col=NULL
   NULL
 }
 
-save_ts <- function(i, x, label, col, xlm, ylm){
+save_ts <- function(i, x, label, col, xlm, ylm, axes_only=FALSE){
   x <- filter(x, frameID <= i)
-  g <- ggplot(x, aes(Year, Mean)) + geom_line(colour=col, size=1) + xlim(xlm) + ylim(ylm) + theme_blank()
+  g <- ggplot(x, aes(Year, Mean))
+  if(axes_only){
+    if(i!=1) return()
+    g <- g + scale_x_continuous(name="", breaks=seq(xlm[1], xlm[2], by=10), limits=xlm) +
+      scale_y_continuous(name="", limits=ylm) + theme_axes_only(col)
+    dir.create(outDir <- "frames", showWarnings=FALSE)
+    png(paste0(outDir, "/ts_axes_fixed_bkgd.png"), width=4*1920, height=4*1080, res=300, bg="transparent")
+    print(g)
+    dev.off()
+    return()
+  }
+  g <- g + geom_line(colour=col, size=1) + xlim(xlm) + ylim(ylm) + theme_blank()
   dir.create(outDir <- file.path("frames", label), recursive=TRUE, showWarnings=FALSE)
   png(sprintf(paste0(outDir, "/", label, "_%04d.png"), i),
       width=4*1920, height=4*1080, res=300, bg="transparent")

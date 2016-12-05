@@ -42,5 +42,6 @@ gc()
 # @knitr plot
 for(i in seq_along(d)){
   x <- d[[i]]
+  if(i==1) save_ts(1, x, lab=paste0("ts_", x$ID[1]), col="white", xlm=xlm, ylm=ylm, axes_only=TRUE)
   mclapply(x$frameID, save_ts, x, lab=paste0("ts_", x$ID[1]), col="white", xlm=xlm, ylm=ylm, mc.cores=32)
 }
